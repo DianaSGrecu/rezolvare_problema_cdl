@@ -1,0 +1,105 @@
+#!/usr/bin/python
+import re
+import time
+from datetime import datetime, timedelta
+import sys
+import collections
+#open file
+arg = sys.argv;
+fo = open (arg[1], "r")
+
+d = {}
+if (arg.count("--interval") == 0) :
+	interval = timedelta(minutes = 1);
+	inter = 1;
+else :
+	index = arg.index ("--interval");
+	interval = timedelta(minutes = int(arg[index + 1]));
+	inter = arg[index + 1]; 
+
+ok_start = False;
+ok_end = False;
+if (arg.count ("--start") != 0) :
+	ok_start = True;
+	index_start = arg.index ("--start");
+	start = datetime.strptime(arg[index_start + 1], "%Y-%m-%dT%H:%M");
+
+#print start
+if (arg.count ("--end") != 0) :
+	ok_end = True;
+	index_end = arg.index ("--end");
+	end = datetime.strptime(arg[index_end + 1], "%Y-%m-%dT%H:%M");
+#endpointlis = [];
+timestamplist = [];
+for i in fo:
+	#find endpoint in each line
+	str = i
+	str1 = str.split("GET ")[1]
+	str2 = str1.split(" HTTP")[0]
+	endpoint = re.split('[?#]', str2)[0]
+	#if (endpointlist.count (endpoint) == 0) : endpointlist.append(endpoint);
+
+	#find timestamp	
+	date = ((str.split("GET ")[0]).split("[")[1]).split(" ")[0]
+	#hour = ((str.split("GET ")[0]).split("[")[1]).split(":")[1]
+	#minute = ((str.split("GET ")[0]).split("[")[1]).split(":")[2]
+	date_object = datetime.strptime(date, "%d/%b/%Y:%H:%M:%S")
+	#final_date = date_object.strftime("%Y-%m-%d")
+	#time = hour + ":" + minute
+	timestamp = date_object.replace(second=0, microsecond=0)
+
+	#print timestamp.strftime("%Y-%m-%dT%H:%M")
+
+	if ((ok_start and timestamp < start) or (ok_end and timestamp > end)) : continue	
+
+	nrsucces = 0;
+	nrfailure = 0;
+
+	#find status code
+	status_code = (str.split('"')[2]).split(" ")[1]
+
+	#print status_code[:1]
+	if (status_code[:1] == "2") : 
+		nrsucces = nrsucces + 1
+	else :
+		nrfailure = nrfailure + 1
+
+	found = False;
+	for i in timestamplist[::-1]:
+		if(timestamp - i < interval and d[i].has_key(endpoint)):
+			realtime = i;
+			found = True;
+			break;
+		if(timestamp - i >= interval):
+			break;
+
+	if (not timestamplist or not found) :
+		# print "not found", endpoint;
+		if(timestamp not in timestamplist):
+			timestamplist.append(timestamp); 
+			d[timestamp] = {};
+
+		d2 = d[timestamp];	
+		d2[endpoint] = [];
+		d2[endpoint].append(nrsucces);
+		d2[endpoint].append(nrfailure);
+	else :
+		# print "found", endpoint;
+		d2 = d[realtime];
+		if (d2.has_key(endpoint) == False) :
+			d2[endpoint] = [];
+			d2[endpoint].append(nrsucces);
+			d2[endpoint].append(nrfailure);
+		else :	
+			d2[endpoint][0] += nrsucces;
+			d2[endpoint][1] += nrfailure;
+
+for i in timestamplist :
+	od = collections.OrderedDict (sorted(d[i].items()));
+	for end, val in od.iteritems() :
+		success = 100.0 * val[0] / (val[0] + val[1]);
+		print i.strftime("%Y-%m-%dT%H:%M"), inter, end, "%.2f" % (success)
+
+
+
+
